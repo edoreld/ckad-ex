@@ -1,2 +1,0 @@
-# ckad-ex
-# ckad-ex
