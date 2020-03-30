@@ -1,252 +1,195 @@
-# Services and Networking (13%)
+# Observability (18%)
 
-### Create a pod with image nginx called nginx and expose its port 80
+## Liveness and readiness probes
 
-<details><summary>show</summary>
-<p>
+kubernetes.io > Documentation > Tasks > Configure Pods and Containers > [Configure Liveness and Readiness Probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/)
 
-```bash
-kubectl run nginx --image=nginx --restart=Never --port=80 --expose
-# observe that a pod as well as a service are created
-```
-
-</p>
-</details>
-
-
-### Confirm that ClusterIP has been created. Also check endpoints
+### Create an nginx pod with a liveness probe that just runs the command 'ls'. Save its YAML in pod.yaml. Run it, check its probe status, delete it.
 
 <details><summary>show</summary>
 <p>
 
 ```bash
-kubectl get svc nginx # services
-kubectl get ep # endpoints
-```
-
-</p>
-</details>
-
-### Get service's ClusterIP, create a temp busybox pod and 'hit' that IP with wget
-
-<details><summary>show</summary>
-<p>
-
-```bash
-kubectl get svc nginx # get the IP (something like 10.108.93.130)
-kubectl run busybox --rm --image=busybox -it --restart=Never -- sh
-wget -O- IP:80
-exit
-```
-
-</p>
-or
-<p>
-
-```bash
-IP=$(kubectl get svc nginx --template={{.spec.clusterIP}}) # get the IP (something like 10.108.93.130)
-kubectl run busybox --rm --image=busybox -it --restart=Never --env="IP=$IP" -- wget -O- $IP:80
-```
-
-</p>
-</details>
-
-### Convert the ClusterIP to NodePort for the same service and find the NodePort port. Hit service using Node's IP. Delete the service and the pod at the end.
-
-<details><summary>show</summary>
-<p>
-
-```bash
-kubectl edit svc nginx
-```
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  creationTimestamp: 2018-06-25T07:55:16Z
-  name: nginx
-  namespace: default
-  resourceVersion: "93442"
-  selfLink: /api/v1/namespaces/default/services/nginx
-  uid: 191e3dac-784d-11e8-86b1-00155d9f663c
-spec:
-  clusterIP: 10.97.242.220
-  ports:
-  - port: 80
-    protocol: TCP
-    targetPort: 80
-  selector:
-    run: nginx
-  sessionAffinity: None
-  type: NodePort # change cluster IP to nodeport
-status:
-  loadBalancer: {}
-```
-
-```bash
-kubectl get svc
-```
-
-```
-# result:
-NAME         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
-kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP        1d
-nginx        NodePort    10.107.253.138   <none>        80:31931/TCP   3m
-```
-
-```bash
-wget -O- NODE_IP:31931 # if you're using Kubernetes with Docker for Windows/Mac, try 127.0.0.1
-#if you're using minikube, try minikube ip, then get the node ip such as 192.168.99.117
-```
-
-```bash
-kubectl delete svc nginx # Deletes the service
-kubectl delete pod nginx # Deletes the pod
-```
-</p>
-</details>
-
-### Create a deployment called foo using image 'dgkanatsios/simpleapp' (a simple server that returns hostname) and 3 replicas. Label it as 'app=foo'. Declare that containers in this pod will accept traffic on port 8080 (do NOT create a service yet)
-
-<details><summary>show</summary>
-<p>
-
-
-```bash
-kubectl run foo --image=dgkanatsios/simpleapp --labels=app=foo --port=8080 --replicas=3
-```
-Or, you can use the more recent approach of creating the requested deployment as kubectl run has been deprecated.
-
-```bash
-kubectl create deploy foo --image=dgkanatsios/simpleapp --dry-run -o yaml > foo.yml
-
-vi foo.yml
-```
-
-Update the yaml to update the replicas and add container port.
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  creationTimestamp: null
-  labels:
-    app: foo
-  name: foo
-spec:
-  replicas: 3 # Update this
-  selector:
-    matchLabels:
-      app: foo
-  strategy: {}
-  template:
-    metadata:
-      creationTimestamp: null
-      labels:
-        app: foo
-    spec:
-      containers:
-      - image: dgkanatsios/simpleapp
-        name: simpleapp
-        ports:                   # Add this
-          - containerPort: 8080  # Add this
-        resources: {}
-status: {}
-```
-</p>
-</details>
-
-### Get the pod IPs. Create a temp busybox pod and trying hitting them on port 8080
-
-<details><summary>show</summary>
-<p>
-
-
-```bash
-kubectl get pods -l app=foo -o wide # 'wide' will show pod IPs
-kubectl run busybox --image=busybox --restart=Never -it --rm -- sh
-wget -O- POD_IP:8080 # do not try with pod name, will not work
-# try hitting all IPs to confirm that hostname is different
-exit
-```
-
-</p>
-</details>
-
-### Create a service that exposes the deployment on port 6262. Verify its existence, check the endpoints
-
-<details><summary>show</summary>
-<p>
-
-
-```bash
-kubectl expose deploy foo --port=6262 --target-port=8080
-kubectl get service foo # you will see ClusterIP as well as port 6262
-kubectl get endpoints foo # you will see the IPs of the three replica nodes, listening on port 8080
-```
-
-</p>
-</details>
-
-### Create a temp busybox pod and connect via wget to foo service. Verify that each time there's a different hostname returned. Delete deployment and services to cleanup the cluster
-
-<details><summary>show</summary>
-<p>
-
-```bash
-kubectl get svc # get the foo service ClusterIP
-kubectl run busybox --image=busybox -it --rm --restart=Never -- sh
-wget -O- foo:6262 # DNS works! run it many times, you'll see different pods responding
-wget -O- SERVICE_CLUSTER_IP:6262 # ClusterIP works as well
-# you can also kubectl logs on deployment pods to see the container logs
-kubectl delete svc foo
-kubectl delete deploy foo
-```
-
-</p>
-</details>
-
-### Create an nginx deployment of 2 replicas, expose it via a ClusterIP service on port 80. Create a NetworkPolicy so that only pods with labels 'access: granted' can access the deployment and apply it
-
-kubernetes.io > Documentation > Concepts > Services, Load Balancing, and Networking > [Network Policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/)
-
-<details><summary>show</summary>
-<p>
-
-```bash
-kubectl run nginx --image=nginx --replicas=2 --port=80 --expose
-kubectl describe svc nginx # see the 'run=nginx' selector for the pods
-# or
-kubectl get svc nginx -o yaml
-
-vi policy.yaml
+kubectl run nginx --image=nginx --restart=Never --dry-run -o yaml > pod.yaml
+vi pod.yaml
 ```
 
 ```YAML
-kind: NetworkPolicy
-apiVersion: networking.k8s.io/v1
+apiVersion: v1
+kind: Pod
 metadata:
-  name: access-nginx # pick a name
+  creationTimestamp: null
+  labels:
+    run: nginx
+  name: nginx
 spec:
-  podSelector:
-    matchLabels:
-      run: nginx # selector for the pods
-  ingress: # allow ingress traffic
-  - from:
-    - podSelector: # from pods
-        matchLabels: # with this label
-          access: granted
+  containers:
+  - image: nginx
+    imagePullPolicy: IfNotPresent
+    name: nginx
+    resources: {}
+    livenessProbe: # our probe
+      exec: # add this line
+        command: # command definition
+        - ls # ls command
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}
 ```
 
 ```bash
-# Create the NetworkPolicy
-kubectl create -f policy.yaml
+kubectl create -f pod.yaml
+kubectl describe pod nginx | grep -i liveness # run this to see that liveness probe works
+kubectl delete -f pod.yaml
+```
 
-# Check if the Network Policy has been created correctly
-# make sure that your cluster's network provider supports Network Policy (https://kubernetes.io/docs/tasks/administer-cluster/declare-network-policy/#before-you-begin)
-kubectl run busybox --image=busybox --rm -it --restart=Never -- wget -O- http://nginx:80                       # This should not work
-kubectl run busybox --image=busybox --rm -it --restart=Never --labels=access=granted -- wget -O- http://nginx:80  # This should be fine
+</p>
+</details>
+
+### Modify the pod.yaml file so that liveness probe starts kicking in after 5 seconds whereas the interval between probes would be 5 seconds. Run it, check the probe, delete it.
+
+<details><summary>show</summary>
+<p>
+
+```bash
+kubectl explain pod.spec.containers.livenessProbe # get the exact names
+```
+
+```YAML
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: nginx
+  name: nginx
+spec:
+  containers:
+  - image: nginx
+    imagePullPolicy: IfNotPresent
+    name: nginx
+    resources: {}
+    livenessProbe: 
+      initialDelaySeconds: 5 # add this line
+      periodSeconds: 5 # add this line as well
+      exec:
+        command:
+        - ls
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}
+```
+
+```bash
+kubectl create -f pod.yaml
+kubectl describe po nginx | grep -i liveness
+kubectl delete -f pod.yaml
+```
+
+</p>
+</details>
+
+### Create an nginx pod (that includes port 80) with an HTTP readinessProbe on path '/' on port 80. Again, run it, check the readinessProbe, delete it.
+
+<details><summary>show</summary>
+<p>
+
+```bash
+kubectl run nginx --image=nginx --dry-run -o yaml --restart=Never --port=80 > pod.yaml
+vi pod.yaml
+```
+
+```YAML
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: nginx
+  name: nginx
+spec:
+  containers:
+  - image: nginx
+    imagePullPolicy: IfNotPresent
+    name: nginx
+    resources: {}
+    ports:
+      - containerPort: 80 # Note: Readiness probes runs on the container during its whole lifecycle. Since nginx exposes 80, containerPort: 80 is not required for readiness to work.
+    readinessProbe: # declare the readiness probe
+      httpGet: # add this line
+        path: / #
+        port: 80 #
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}
+```
+
+```bash
+kubectl create -f pod.yaml
+kubectl describe pod nginx | grep -i readiness # to see the pod readiness details
+kubectl delete -f pod.yaml
+```
+
+</p>
+</details>
+
+## Logging
+
+### Create a busybox pod that runs 'i=0; while true; do echo "$i: $(date)"; i=$((i+1)); sleep 1; done'. Check its logs
+
+<details><summary>show</summary>
+<p>
+
+```bash
+kubectl run busybox --image=busybox --restart=Never -- /bin/sh -c 'i=0; while true; do echo "$i: $(date)"; i=$((i+1)); sleep 1; done'
+kubectl logs busybox -f # follow the logs
+```
+
+</p>
+</details>
+
+## Debugging
+
+### Create a busybox pod that runs 'ls /notexist'. Determine if there's an error (of course there is), see it. In the end, delete the pod
+
+<details><summary>show</summary>
+<p>
+
+```bash
+kubectl run busybox --restart=Never --image=busybox -- /bin/sh -c 'ls /notexist'
+# show that there's an error
+kubectl logs busybox
+kubectl describe po busybox
+kubectl delete po busybox
+```
+
+</p>
+</details>
+
+### Create a busybox pod that runs 'notexist'. Determine if there's an error (of course there is), see it. In the end, delete the pod forcefully with a 0 grace period
+
+<details><summary>show</summary>
+<p>
+
+```bash
+kubectl run busybox --restart=Never --image=busybox -- notexist
+kubectl logs busybox # will bring nothing! container never started
+kubectl describe po busybox # in the events section, you'll see the error
+# also...
+kubectl get events | grep -i error # you'll see the error here as well
+kubectl delete po busybox --force --grace-period=0
+```
+
+</p>
+</details>
+
+### Get CPU/memory utilization for nodes ([metrics-server](https://github.com/kubernetes-incubator/metrics-server) must be running)
+
+<details><summary>show</summary>
+<p>
+
+```bash
+kubectl top nodes
 ```
 
 </p>
